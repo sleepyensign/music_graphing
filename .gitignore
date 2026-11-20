@@ -2,5 +2,7 @@
 .vscode
 temp.json
 temp2.json
+temp3.json
 billboard_all.json
 saved_settings.json
+billboard_cache.json
