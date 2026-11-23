@@ -1,4 +1,4 @@
-import os, io, base64, json, time
+import os, io, base64, json, time, threading
 import matplotlib.pyplot as plt
 #from enum import Enum
 from dotenv import load_dotenv
@@ -48,6 +48,7 @@ else:
 
 sentinel = -1
 temp_input = None
+interrupt = False
 
 ### API Functions
 
@@ -88,19 +89,24 @@ def search_track(token, track_name):
     headers = get_auth_header(token)
 
     result = get(base_url, headers=headers, params=params)
-    print(result, result.url)
+    print(result)
     if result.status_code == 200:
-        print("Good")
         time.sleep(RATE_LIMIT)
+        
     elif result.status_code == 429:
         json_result = json.loads(result.content)
         with open("temp3.json", "w", encoding="utf-8") as file:
             json.dump(json_result, file, indent=4)
-        print("Too many requests, retrying after " + str(result.headers["Retry-After"] + str(RETRY_ADD)) + " seconds.")
-        time.sleep(int(result.headers["Retry-After"]) + RETRY_ADD)
-        print("Retrying...")
-        result = get(base_url, headers=headers, params=params)
-        print(result, result.url)
+        
+        if "error" in json_result and json_result["error"]["reason"] == "QUOTA_EXCEEDED":
+            print("The Spotify 24 hour developer quota has been exceeded. Quitting...")
+            quit_program()
+        else:
+            print("Too many requests, retrying after " + str(result.headers["Retry-After"] + str(RETRY_ADD)) + " seconds.")
+            time.sleep(int(result.headers["Retry-After"]) + RETRY_ADD)
+            print("Retrying...")
+            result = get(base_url, headers=headers, params=params)
+            print(result, result.url)
 
     json_result = json.loads(result.content)
     return json_result
@@ -128,10 +134,10 @@ def billboard_download_all():
 
 def billboard_cache_search(name):
     if name in billboard_cache:
-        print("Found in cache.")
+        print("Found in cache: " + name)
         return billboard_cache[name]
     else:
-        print("Not found in cache")
+        print("Not found in cache: " + name)
         return -1
 
 def billboard_cache_add(name, data):
@@ -211,23 +217,36 @@ def billboard_all_read_and_graph():
     
     print("Beginning search, " + str(r) + " songs in every " + str(n) + "th entry for " + str(i) + " iterations.")
     x = []
+    searched = []
     
     for j in range(i):
         index = -((j * n) + 1)
         print("Searching from " + date_format(billboard_result[index]["date"]) + " (index: " + str(index) + ")...")
+        threading.Thread(target=listen_for_enter, daemon=True).start()
         for q in range(r):
+            if interrupt:
+                print("Saving and quitting...")
+                quit_program()
+            
             track_name = billboard_result[index]["data"][q]["song"] + " by " + billboard_result[index]["data"][q]["artist"]
             result = billboard_cache_search(track_name)
+            
+            if track_name in searched:
+                print("Skipping already searched: " + track_name)
+                continue
             
             if result == -1:
                 result = search_track(token, track_name)
                 if len(result["tracks"]["items"]) < 1:
                     print("Song not found, continuing...")
                 else:
+                    
                     billboard_cache_add(track_name, result)
+                    searched.append(track_name)
                     if result["tracks"]["items"][0]["album"]["album_type"] != "single":
                         x.append((result["tracks"]["items"][0]["track_number"] - 1) / (result["tracks"]["items"][0]["album"]["total_tracks"] - 1))
             else:
+                searched.append(track_name)
                 if result["tracks"]["items"][0]["album"]["album_type"] != "single":
                     x.append((result["tracks"]["items"][0]["track_number"] - 1) / (result["tracks"]["items"][0]["album"]["total_tracks"] - 1))
     
@@ -255,6 +274,11 @@ def date_format(date):
     new_date = date_list[1] + "-" + date_list[2] + "-" + date_list[0]
     return new_date
 
+def listen_for_enter():
+    global interrupt
+    input("Press enter at any time to save and quit.\n")
+    interrupt = True
+
 def quit_program():
     with open("saved_settings.json", "w", encoding="utf-8") as file:
         json.dump(settings, file, indent=4)
@@ -268,6 +292,7 @@ menu_options = ["Quit Program", "Change Graphing Types", "Billboard Hot 100 - Re
 menu_options_desc = ["Quits the program."]
 
 while sentinel != 0:
+    interrupt = False
     print("\nWhat would you like to do?\n")
     print_list(menu_options)
     temp_input = input("\nNumber: ")
