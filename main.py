@@ -11,7 +11,7 @@ CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 COUNTRY_CODE = "US"
 DEFAULT_LIMIT = 1
 RETRY_ADD = 2
-RATE_LIMIT = 2
+RATE_LIMIT = 1
 BILLBOARD_BASE_URL = "https://raw.githubusercontent.com/mhollingshead/billboard-hot-100/main/"
 
 SETTINGS_DEFAULT = {
@@ -107,6 +107,10 @@ def search_track(token, track_name):
             print("Retrying...")
             result = get(base_url, headers=headers, params=params)
             print(result, result.url)
+    
+    else:
+        print("Something went wrong in the search, saving and quitting...")
+        quit_program()
 
     json_result = json.loads(result.content)
     return json_result
@@ -171,6 +175,7 @@ def billboard_recent_search_and_graph():
             x.append((result["tracks"]["items"][0]["track_number"] - 1) / (result["tracks"]["items"][0]["album"]["total_tracks"] - 1))
 
     print("Singles not graphed: " + str(100 - len(x)) + "/100 songs")
+    print("Total songs graphed: " + str(len(x)))
     graph(x, date_format(billboard_result["date"]))
 
 def billboard_all_read_and_graph():
@@ -221,7 +226,7 @@ def billboard_all_read_and_graph():
     
     for j in range(i):
         index = -((j * n) + 1)
-        print("Searching from " + date_format(billboard_result[index]["date"]) + " (index: " + str(index) + ")...")
+        print("Searching from " + date_format(billboard_result[index]["date"]) + " (index: " + str(index) + ", iteration: " + str(j) + ")...")
         threading.Thread(target=listen_for_enter, daemon=True).start()
         for q in range(r):
             if interrupt:
@@ -239,6 +244,7 @@ def billboard_all_read_and_graph():
                 result = search_track(token, track_name)
                 if len(result["tracks"]["items"]) < 1:
                     print("Song not found, continuing...")
+                    billboard_cache_add(track_name, result)
                 else:
                     
                     billboard_cache_add(track_name, result)
@@ -246,12 +252,16 @@ def billboard_all_read_and_graph():
                     if result["tracks"]["items"][0]["album"]["album_type"] != "single":
                         x.append((result["tracks"]["items"][0]["track_number"] - 1) / (result["tracks"]["items"][0]["album"]["total_tracks"] - 1))
             else:
+                if len(result["tracks"]["items"]) < 1:
+                    print("Song not found, continuing...")
+                    continue
                 searched.append(track_name)
                 if result["tracks"]["items"][0]["album"]["album_type"] != "single":
                     x.append((result["tracks"]["items"][0]["track_number"] - 1) / (result["tracks"]["items"][0]["album"]["total_tracks"] - 1))
     
     print("Singles not graphed and songs not found: " + str((r * i) - len(x)) + "/" + str(r * i) + " songs")
-    graph(x, "(" + str(r) + " songs in every " + str(n) + "th entry for " + str(i) + " iterations)")
+    print("Total songs graphed: " + str(len(x)))
+    graph(x, "(" + str(r) + " songs in every " + str(n) + "th entry for " + str(i) + " iterations from present to " + date_format(billboard_result[-(n * i)]["date"]) + ")")
 
 ### Misc Functions
 
